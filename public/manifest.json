@@ -1,15 +1,27 @@
 {
   "name": "Chess Replay",
   "short_name": "Chess Replay",
+  "description": "Chess Replay and Game Review for Youssef-2099",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#EBECD0",
+  "background_color": "#1a2332",
   "theme_color": "#779556",
   "icons": [
     {
-      "src": "/image.jpg",
-      "sizes": "980x980",
-      "type": "image/jpeg"
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
     }
   ]
 }
