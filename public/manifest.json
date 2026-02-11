@@ -1,0 +1,15 @@
+{
+  "name": "Chess Replay",
+  "short_name": "Chess Replay",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#EBECD0",
+  "theme_color": "#779556",
+  "icons": [
+    {
+      "src": "/image.jpg",
+      "sizes": "980x980",
+      "type": "image/jpeg"
+    }
+  ]
+}
