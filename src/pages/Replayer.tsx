@@ -43,12 +43,22 @@ const classifyMove = (data: {
 }): Classification => {
   if (data.isBook) return "book";
   if (data.isBest) return "best";
-  if (data.cpLoss > 200) return "blunder";
-  if (data.cpLoss > 100) return "mistake";
-  if (data.cpLoss > 50) return "inaccuracy";
-  if (data.cpLoss <= 10 && data.evalSwing >= 150) return "brilliant";
-  if (data.cpLoss <= 10) return "great";
-  return "excellent";
+  
+  // Tightened criteria for more accurate classifications
+  if (data.cpLoss > 100) return "blunder";        // Major mistake (>1 pawn)
+  if (data.cpLoss > 50) return "mistake";          // Significant error (>0.5 pawn)
+  if (data.cpLoss > 20) return "inaccuracy";       // Minor error (>0.2 pawn)
+  
+  // Brilliant: Only for moves with minimal loss AND significant positive swing
+  if (data.cpLoss <= 5 && data.evalSwing >= 200) return "brilliant";
+  
+  // Great: Low loss with good positive impact
+  if (data.cpLoss <= 10 && data.evalSwing >= 100) return "great";
+  
+  // Excellent: Accurate move with minimal loss
+  if (data.cpLoss <= 20) return "excellent";
+  
+  return "excellent"; // Fallback
 };
 
 // ... other utils
@@ -307,6 +317,31 @@ export const Replayer = ({ game }: { game: ArchiveGame | null }) => {
     return [[from, to]];
   }, [analysis, engineReady, currentIndex]);
 
+  // Custom square styles to show classification icon on destination square
+  const customSquareStyles = useMemo(() => {
+    if (!engineReady || currentIndex === 0 || !analysis.length) return {};
+    
+    const moveIndex = currentIndex - 1;
+    if (moveIndex < 0 || moveIndex >= moves.length || moveIndex >= analysis.length) return {};
+    
+    const move = moves[moveIndex];
+    const analyzedMove = analysis[moveIndex];
+    if (!move || !analyzedMove) return {};
+    
+    // Get destination square from move (e.g., "e4" from "e2e4")
+    const destSquare = move.uci.slice(2, 4);
+    const iconUrl = getMoveIcon(analyzedMove.classification);
+    
+    return {
+      [destSquare]: {
+        backgroundImage: `url(${iconUrl})`,
+        backgroundSize: '30% 30%',
+        backgroundPosition: 'top right',
+        backgroundRepeat: 'no-repeat',
+      }
+    };
+  }, [engineReady, currentIndex, moves, analysis]);
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-[calc(100vh-6rem)]">
       {/* Main Board Area */}
@@ -368,6 +403,7 @@ export const Replayer = ({ game }: { game: ArchiveGame | null }) => {
                 position={currentFen} 
                 boardWidth={boardWidth}
                 customArrows={bestMoveArrow}
+                customSquareStyles={customSquareStyles}
                 customDarkSquareStyle={{ backgroundColor: "#3a4a63" }}
                 customLightSquareStyle={{ backgroundColor: "#8faecf" }}
              />
