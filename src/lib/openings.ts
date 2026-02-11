@@ -1,24 +1,56 @@
-export const openingLines: string[][] = [
-  ["e4", "e5", "Nf3", "Nc6", "Bb5"],
-  ["e4", "e5", "Nf3", "Nc6", "Bc4", "Bc5"],
-  ["e4", "c5", "Nf3", "d6", "d4", "cxd4"],
-  ["d4", "d5", "c4", "e6", "Nc3", "Nf6"],
-  ["d4", "Nf6", "c4", "g6", "Nc3", "Bg7"],
-  ["c4", "e5", "Nc3", "Nf6", "g3"],
-  ["d4", "d5", "Nf3", "Nf6", "e3", "e6"],
-  ["e4", "e5", "Nf3", "Nc6", "d4"],
-];
+import { openingsDatabase } from "./openingsData";
 
-export const isBookMove = (movesSoFar: string[], moveIndex: number) => {
-  return openingLines.some((line) => {
-    if (moveIndex >= line.length) {
+export interface Opening {
+  eco: string;
+  name: string;
+  moves: string[];
+}
+
+export const isBookMove = (
+  movesSoFar: string[],
+  moveIndex: number,
+): boolean => {
+  return openingsDatabase.some((opening) => {
+    if (moveIndex >= opening.moves.length) {
       return false;
     }
     for (let i = 0; i <= moveIndex; i += 1) {
-      if (line[i] !== movesSoFar[i]) {
+      if (opening.moves[i] !== movesSoFar[i]) {
         return false;
       }
     }
     return true;
   });
+};
+
+export const getOpeningName = (movesSoFar: string[]): string | null => {
+  console.log("[Opening Detection] Moves provided:", movesSoFar.slice(0, 10));
+  console.log("[Opening Detection] Database size:", openingsDatabase.length);
+
+  // Find the longest matching opening
+  let bestMatch: Opening | null = null;
+  let bestMatchLength = 0;
+
+  for (const opening of openingsDatabase) {
+    if (opening.moves.length > movesSoFar.length) {
+      continue;
+    }
+
+    let matches = true;
+    for (let i = 0; i < opening.moves.length; i += 1) {
+      if (opening.moves[i] !== movesSoFar[i]) {
+        matches = false;
+        break;
+      }
+    }
+
+    if (matches && opening.moves.length > bestMatchLength) {
+      bestMatch = opening;
+      bestMatchLength = opening.moves.length;
+    }
+  }
+
+  const result = bestMatch ? `${bestMatch.name} (${bestMatch.eco})` : null;
+  console.log("[Opening Detection] Result:", result);
+  return result;
 };
