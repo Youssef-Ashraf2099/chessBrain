@@ -13,8 +13,8 @@ export default defineConfig({
         name: 'Chess Replay',
         short_name: 'Chess Replay',
         description: 'Chess Replay and Game Review for Youssef-2099',
-        theme_color: '#00809dff',
-        background_color: '#1a2332',
+        theme_color: '#0f1219',
+        background_color: '#0f1219',
         display: 'standalone',
         start_url: '/',
         icons: [

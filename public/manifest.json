@@ -4,8 +4,8 @@
   "description": "Chess Replay and Game Review for Youssef-2099",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#1a2332",
-  "theme_color": "#779556",
+  "background_color": "#0f1219",
+  "theme_color": "#0f1219",
   "icons": [
     {
       "src": "/icons/icons8-chess-com-48.png",
