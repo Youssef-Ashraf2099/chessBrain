@@ -290,7 +290,7 @@ const App = () => {
   const [engineError, setEngineError] = useState("");
   const [analysisMode, setAnalysisMode] = useState<
     "fast" | "balanced" | "deep"
-  >("balanced");
+  >("fast");
   const engineRef = useRef<ReturnType<typeof createStockfishEngine> | null>(
     null,
   );
@@ -301,9 +301,9 @@ const App = () => {
 
   const analysisConfig = useMemo(
     () => ({
-      fast: { depth: 10, movetime: 140, label: "Fast" },
-      balanced: { depth: 12, movetime: 260, label: "Balanced" },
-      deep: { depth: 14, movetime: 520, label: "Deep" },
+      fast: { depth: 9, movetime: 90, label: "Fast" },
+      balanced: { depth: 11, movetime: 180, label: "Balanced" },
+      deep: { depth: 13, movetime: 360, label: "Deep" },
     }),
     [],
   );
@@ -351,6 +351,9 @@ const App = () => {
         ]);
       }
       if (!selectedGameUrl || selectedGameUrl === latestGameId) {
+        if (latest.url === game?.url) {
+          return;
+        }
         setSelectedGameUrl(latest.url);
         setGame(latest);
         setNewGameReady(false);
@@ -360,7 +363,7 @@ const App = () => {
     return () => {
       window.clearInterval(interval);
     };
-  }, [latestGameId, selectedGameUrl]);
+  }, [game?.url, latestGameId, selectedGameUrl]);
 
   useEffect(() => {
     if (!selectedGameUrl) {
@@ -627,6 +630,22 @@ const App = () => {
     };
   }, [analysis, boardWidth, currentIndex, moves]);
 
+  const suggestionArrow = useMemo(() => {
+    if (!analysis.length) {
+      return [] as [string, string][];
+    }
+    if (currentIndex >= analysis.length) {
+      return [] as [string, string][];
+    }
+    const bestMove = analysis[currentIndex]?.bestMove;
+    if (!bestMove || bestMove.length < 4) {
+      return [] as [string, string][];
+    }
+    const from = bestMove.slice(0, 2);
+    const to = bestMove.slice(2, 4);
+    return [[from, to]];
+  }, [analysis, currentIndex]);
+
   const resultTag = game ? extractTag(game.pgn, "Result") : "";
   const whitePlayer = game ? game.white.username : "";
   const blackPlayer = game ? game.black.username : "";
@@ -727,6 +746,8 @@ const App = () => {
               customDarkSquareStyle={{ backgroundColor: "#779556" }}
               boardWidth={boardWidth}
               animationDuration={150}
+              customArrows={suggestionArrow}
+              customArrowColor="rgba(38, 194, 163, 0.9)"
             />
             {activeBadge ? (
               <div className="board-overlay">
