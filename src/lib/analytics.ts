@@ -35,31 +35,18 @@ export const calculateWinRates = (games: ArchiveGame[], username: string) => {
 };
 
 export const getMostPlayedOpenings = (games: ArchiveGame[]) => {
-  // This is a placeholder as full PGN parsing for every game to get openings might be heavy.
-  // Ideally, if the API provided opening info we would use that.
-  // For now, checks if the PGN string contains "Opening" tag or just rely on what we can parse.
-  // A robust implementation would need to parse PGN headers.
-  
   const openings: Record<string, { name: string; count: number; wins: number }> = {};
-
-  // Simple regex to extract Opening tag from PGN if available
   const openingRegex = /\[Opening "(.+?)"\]/;
 
   games.forEach(game => {
      const match = game.pgn.match(openingRegex);
      if (match && match[1]) {
-         const openingName = match[1].split(":")[0]; // Simplify "Sicilian Defense: Najdorf" to "Sicilian Defense" for broader grouping? Or keep unique.
-         // Let's keep full name for now but maybe trim some variants if too distinct.
+         const openingName = match[1].split(":")[0];
          
          if (!openings[openingName]) {
              openings[openingName] = { name: openingName, count: 0, wins: 0 };
          }
          openings[openingName].count++;
-         
-         // Check win
-         // We need username inside this function or passed in. Assuming we have 'games' and can infer or pass username.
-         // For simplicity, let's assume we can pass username or just count generic stats.
-         // Actually, let's extract result logic.
      }
   });
   
@@ -122,4 +109,149 @@ export const determinePlayStyle = (games: ArchiveGame[], username: string): { st
       description: "You balance between tactical sharpness and positional understanding."
     };
   }
+};
+
+// Game Phase Analysis
+export const analyzeGamePhases = (games: ArchiveGame[], username: string) => {
+  let openingMistakes = 0;
+  let middlegameMistakes = 0;
+  let endgameMistakes = 0;
+  let totalGames = 0;
+  
+  games.forEach(game => {
+    const moveCount = game.pgn.split(/\d+\./).length - 1; // Rough move count
+    totalGames++;
+    
+    const isWhite = game.white.username.toLowerCase() === username.toLowerCase();
+    const result = isWhite ? game.white.result : game.black.result;
+    
+    // Simple heuristic: losses in short games = opening issues
+    if (result !== "win") {
+      if (moveCount < 20) openingMistakes++;
+      else if (moveCount < 40) middlegameMistakes++;
+      else endgameMistakes++;
+    }
+  });
+  
+  return {
+    opening: { mistakes: openingMistakes, percentage: (openingMistakes / totalGames * 100).toFixed(1) },
+    middlegame: { mistakes: middlegameMistakes, percentage: (middlegameMistakes / totalGames * 100).toFixed(1) },
+    endgame: { mistakes: endgameMistakes, percentage: (endgameMistakes / totalGames * 100).toFixed(1) },
+    weakestPhase: openingMistakes > middlegameMistakes && openingMistakes > endgameMistakes ? "Opening" :
+                  middlegameMistakes > endgameMistakes ? "Middlegame" : "Endgame"
+  };
+};
+
+// Color performance statistics
+export const getColorStats = (games: ArchiveGame[], username: string) => {
+  let whiteWins = 0, whiteLosses = 0, whiteDraws = 0;
+  let blackWins = 0, blackLosses = 0, blackDraws = 0;
+  
+  games.forEach(game => {
+    const isWhite = game.white.username.toLowerCase() === username.toLowerCase();
+    const result = isWhite ? game.white.result : game.black.result;
+    
+    if (isWhite) {
+      if (result === "win") whiteWins++;
+      else if (["agreed", "repetition", "stalemate", "insufficient", "50move"].includes(result)) whiteDraws++;
+      else whiteLosses++;
+    } else {
+      if (result === "win") blackWins++;
+      else if (["agreed", "repetition", "stalemate", "insufficient", "50move"].includes(result)) blackDraws++;
+      else blackLosses++;
+    }
+  });
+  
+  const whiteTotal = whiteWins + whiteLosses + whiteDraws;
+  const blackTotal = blackWins + blackLosses + blackDraws;
+  
+  return {
+    white: {
+      wins: whiteWins,
+      losses: whiteLosses,
+      draws: whiteDraws,
+      total: whiteTotal,
+      winRate: whiteTotal > 0 ? (whiteWins / whiteTotal * 100).toFixed(1) : "0"
+    },
+    black: {
+      wins: blackWins,
+      losses: blackLosses,
+      draws: blackDraws,
+      total: blackTotal,
+      winRate: blackTotal > 0 ? (blackWins / blackTotal * 100).toFixed(1) : "0"
+    },
+    preferredColor: whiteTotal > blackTotal ? "White" : "Black"
+  };
+};
+
+// Time control performance
+export const getTimeControlStats = (games: ArchiveGame[], username: string) => {
+  const timeControls: Record<string, { wins: number; total: number }> = {};
+  
+  games.forEach(game => {
+    // Extract time control from PGN
+    const timeControlMatch = game.pgn.match(/\[TimeControl "(.+?)"\]/);
+    let timeClass = "unknown";
+    
+    if (timeControlMatch && timeControlMatch[1]) {
+      const tc = timeControlMatch[1];
+      const baseTime = parseInt(tc.split("+")[0]) || 0;
+      if (baseTime < 180) timeClass = "bullet";
+      else if (baseTime < 600) timeClass = "blitz";
+      else timeClass = "rapid";
+    }
+    
+    const isWhite = game.white.username.toLowerCase() === username.toLowerCase();
+    const result = isWhite ? game.white.result : game.black.result;
+    
+    if (!timeControls[timeClass]) {
+      timeControls[timeClass] = { wins: 0, total: 0 };
+    }
+    
+    timeControls[timeClass].total++;
+    if (result === "win") timeControls[timeClass].wins++;
+  });
+  
+  return Object.entries(timeControls).map(([name, stats]) => ({
+    name,
+    total: stats.total,
+    wins: stats.wins,
+    winRate: (stats.wins / stats.total * 100).toFixed(1)
+  })).sort((a, b) => b.total - a.total);
+};
+
+// Recent form (last N games)
+export const getRecentForm = (games: ArchiveGame[], username: string, lastN = 10) => {
+  const recent = games.slice(0, Math.min(lastN, games.length));
+  const results = recent.map(game => {
+    const isWhite = game.white.username.toLowerCase() === username.toLowerCase();
+    const result = isWhite ? game.white.result : game.black.result;
+    
+    if (result === "win") return "W";
+    if (["agreed", "repetition", "stalemate", "insufficient", "50move"].includes(result)) return "D";
+    return "L";
+  });
+  
+  const wins = results.filter(r => r === "W").length;
+  const streak = calculateStreak(results);
+  
+  return {
+    results,
+    recentWinRate: (wins / results.length * 100).toFixed(1),
+    currentStreak: streak
+  };
+};
+
+const calculateStreak = (results: string[]): string => {
+  if (results.length === 0) return "0";
+  
+  const first = results[0];
+  let count = 0;
+  
+  for (const result of results) {
+    if (result === first) count++;
+    else break;
+  }
+  
+  return `${count} ${first}`;
 };
