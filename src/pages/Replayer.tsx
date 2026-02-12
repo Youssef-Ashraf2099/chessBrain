@@ -45,9 +45,11 @@ const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
 
 const evalToWinProb = (whitePovCp: number) => {
-  // Lichess model: WP = 1 / (1 + 10^(−cp / 400))
+  // Chess.com model: WP = 50 + 50 * (2 / (1 + exp(-0.00368208 * cp)) - 1)
+  // Simplified: WP = 1 / (1 + exp(-0.00368208 * cp))
+  // Constant 0.00368208 ≈ 1/271.7
   const bounded = clamp(whitePovCp, -1500, 1500);
-  return 1 / (1 + Math.pow(10, -bounded / 400));
+  return 1 / (1 + Math.exp(-0.00368208 * bounded));
 };
 
 // Start of EvalBar component (inline for now)
@@ -67,6 +69,25 @@ const EvalBar = ({ currentEval }: { currentEval: number }) => {
   );
 };
 
+/**
+ * Chess.com-style move classification.
+ *
+ * The primary signal is **win-probability loss** (wpl, 0-100 percentage points).
+ * Chess.com thresholds (reverse-engineered from their Game Review):
+ *   Blunder  ≥ 20 wpl
+ *   Mistake  ≥ 10 wpl
+ *   Inaccuracy ≥ 5 wpl  (sometimes shown from ~4-5)
+ *   Miss     — not used here (would require knowing if a forced win was missed)
+ *
+ * Positive categories additionally use cpLoss and contextual signals:
+ *   Best       — engine's #1 move (cpLoss ≈ 0)
+ *   Excellent  — near-best, wpl < 2
+ *   Good       — acceptable, wpl < 5 (mapped to "excellent" in our type system)
+ *   Great      — strong move with meaningful positive eval swing
+ *   Brilliant  — hard-to-find best move in a critical/uncertain position
+ *                where the second-best alternative is significantly worse;
+ *                capped to be very rare (typically 0-2 per game)
+ */
 const classifyMove = (data: {
   isBook: boolean;
   isBest: boolean;
@@ -76,29 +97,48 @@ const classifyMove = (data: {
   prevWP: number;
 }): Classification => {
   if (data.isBook) return "book";
-  if (data.isBest && data.cpLoss <= 1) return "best";
 
-  const wpl = data.winProbLoss; // percentage points (0-100)
+  const wpl = data.winProbLoss; // percentage points lost (0-100)
 
-  // Negative moves: classified by how much win probability was lost
+  // --- Negative classifications (bad moves) ---
   if (wpl >= 20) return "blunder";
   if (wpl >= 10) return "mistake";
   if (wpl >= 5) return "inaccuracy";
 
-  // Positive / neutral moves
-  // Brilliant: top engine move in a critical position (high prevWP uncertainty)
-  // with large positive eval swing (found a hard-to-see tactic)
-  const prevUncertainty = Math.min(data.prevWP, 1 - data.prevWP); // 0.5 = most uncertain
-  if (data.cpLoss <= 5 && data.evalSwing >= 150 && prevUncertainty >= 0.15) {
+  // --- Positive classifications (good moves) ---
+
+  // Best: the engine's top choice with negligible loss
+  if (data.isBest && wpl < 1) return "best";
+
+  // Brilliant: the best (or near-best) move that is hard to find.
+  // Requirements (chess.com inspired):
+  //  1. Near-zero loss (cpLoss ≤ 10, wpl < 2)
+  //  2. Large positive eval swing (≥ 150 cp) — a tactic / sacrifice
+  //  3. Position was critical/uncertain (prevWP between 20%-80%)
+  //     meaning neither side was already winning comfortably
+  const positionUncertainty = Math.min(data.prevWP, 1 - data.prevWP);
+  if (
+    data.cpLoss <= 10 &&
+    wpl < 2 &&
+    data.evalSwing >= 150 &&
+    positionUncertainty >= 0.2
+  ) {
     return "brilliant";
   }
 
-  // Great: strong move with positive swing
-  if (data.cpLoss <= 10 && data.evalSwing >= 80) {
+  // Great: a strong move with a noticeable positive shift
+  // Requirements:
+  //  1. Low loss (cpLoss ≤ 15, wpl < 3)
+  //  2. Positive eval swing ≥ 80 cp
+  if (data.cpLoss <= 15 && wpl < 3 && data.evalSwing >= 80) {
     return "great";
   }
 
-  // Excellent: accurate, low loss
+  // Excellent: accurate move, very close to the best
+  if (wpl < 2) return "excellent";
+
+  // Fallback for wpl 2-5 range — still "excellent" in our type system
+  // (chess.com shows "Good" here, but we don't have that category)
   return "excellent";
 };
 
