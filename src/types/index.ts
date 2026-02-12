@@ -31,6 +31,7 @@ export type Classification =
   | "excellent"
   | "inaccuracy"
   | "mistake"
+  | "miss"
   | "blunder";
 
 export type AnalyzedMove = MoveInfo & {
