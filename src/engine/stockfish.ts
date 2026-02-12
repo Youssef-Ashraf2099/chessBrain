@@ -19,18 +19,41 @@ type AnalyzeOptions = {
 
 type StockfishEngine = {
   analyzeFen: (fen: string, options: AnalyzeOptions) => Promise<AnalysisResult>;
+  newGame: () => void;
   terminate: () => void;
 };
 
-const parseScore = (line: string): EvalScore | null => {
+const parseInfoLine = (
+  line: string,
+): { depth: number; pv: number; score: EvalScore } | null => {
+  // Only accept lines with a depth and a score
+  const depthMatch = line.match(/\bdepth (\d+)/);
+  if (!depthMatch) return null;
+
+  const pvMatch = line.match(/\bmultipv (\d+)/);
+  const pv = pvMatch ? Number(pvMatch[1]) : 1;
+  // Only track PV 1 (primary line)
+  if (pv !== 1) return null;
+
+  // Skip lowerbound / upperbound aspiration-window noise
+  if (line.includes(" lowerbound") || line.includes(" upperbound")) return null;
+
   const cpMatch = line.match(/score cp (-?\d+)/);
   if (cpMatch) {
-    return { type: "cp", value: Number(cpMatch[1]) };
+    return {
+      depth: Number(depthMatch[1]),
+      pv,
+      score: { type: "cp", value: Number(cpMatch[1]) },
+    };
   }
 
   const mateMatch = line.match(/score mate (-?\d+)/);
   if (mateMatch) {
-    return { type: "mate", value: Number(mateMatch[1]) };
+    return {
+      depth: Number(depthMatch[1]),
+      pv,
+      score: { type: "mate", value: Number(mateMatch[1]) },
+    };
   }
 
   return null;
@@ -46,7 +69,9 @@ const createEngineInstance = (): StockfishEngine => {
   let currentReject: ((error: Error) => void) | null = null;
   let bestMove = "";
   let bestScore: EvalScore | null = null;
+  let bestDepth = 0;
   let readyTimer: number | null = null;
+  let readyResolve: (() => void) | null = null;
   let searchTimer: number | null = null;
   let searchId = 0;
 
@@ -77,13 +102,18 @@ const createEngineInstance = (): StockfishEngine => {
         window.clearTimeout(readyTimer);
         readyTimer = null;
       }
+      if (readyResolve) {
+        readyResolve();
+        readyResolve = null;
+      }
       return;
     }
 
     if (line.startsWith("info")) {
-      const score = parseScore(line);
-      if (score) {
-        bestScore = score;
+      const parsed = parseInfoLine(line);
+      if (parsed && parsed.depth >= bestDepth) {
+        bestDepth = parsed.depth;
+        bestScore = parsed.score;
       }
       return;
     }
@@ -104,6 +134,7 @@ const createEngineInstance = (): StockfishEngine => {
       currentResolve = null;
       currentReject = null;
       bestScore = null;
+      bestDepth = 0;
     }
   };
 
@@ -126,20 +157,14 @@ const createEngineInstance = (): StockfishEngine => {
   worker.postMessage("ucinewgame");
 
   const waitReady = async () => {
-    if (ready) {
-      return;
-    }
+    if (ready) return;
     await new Promise<void>((resolve, reject) => {
-      const interval = window.setInterval(() => {
-        if (ready) {
-          window.clearInterval(interval);
-          resolve();
-        }
-      }, 30);
+      readyResolve = resolve;
+      worker.postMessage("isready");
       readyTimer = window.setTimeout(() => {
-        window.clearInterval(interval);
+        readyResolve = null;
         reject(new Error("Stockfish did not become ready"));
-      }, 8000);
+      }, 15000);
     });
   };
 
@@ -151,26 +176,38 @@ const createEngineInstance = (): StockfishEngine => {
     const currentSearchId = searchId + 1;
     searchId = currentSearchId;
 
+    // Reset per-search tracking
+    bestScore = null;
+    bestDepth = 0;
+
     return new Promise<AnalysisResult>((resolve, reject) => {
       currentResolve = resolve;
       currentReject = reject;
       worker.postMessage("stop");
-      worker.postMessage("ucinewgame");
       worker.postMessage(`position fen ${fen}`);
       if (typeof moveTime === "number") {
-        worker.postMessage(`go movetime ${Math.max(50, Math.round(moveTime))}`);
+        worker.postMessage(
+          `go depth ${targetDepth} movetime ${Math.max(50, Math.round(moveTime))}`,
+        );
       } else {
         worker.postMessage(`go depth ${targetDepth}`);
       }
       searchTimer = window.setTimeout(
         () => {
           if (searchId === currentSearchId) {
-            reject(new Error("Stockfish analysis timed out"));
+            worker.postMessage("stop");
           }
         },
-        Math.max(5000, (moveTime ?? 0) + 3000),
+        Math.max(8000, (moveTime ?? 0) + 4000),
       );
     });
+  };
+
+  const newGame = () => {
+    worker.postMessage("stop");
+    worker.postMessage("ucinewgame");
+    ready = false;
+    worker.postMessage("isready");
   };
 
   const terminate = () => {
@@ -179,6 +216,7 @@ const createEngineInstance = (): StockfishEngine => {
 
   return {
     analyzeFen,
+    newGame,
     terminate,
   };
 };
@@ -201,6 +239,7 @@ export const createStockfishEngine = () => {
 
   return {
     analyzeFen: sharedEngine.analyzeFen,
+    newGame: sharedEngine.newGame,
     terminate: () => {
       sharedUsers = Math.max(0, sharedUsers - 1);
       if (sharedUsers === 0 && sharedEngine) {
